@@ -1,0 +1,90 @@
+name: Create Azure PR on GitHub approval
+
+on:
+  pull_request_review:
+    types:
+      - submitted
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  create-pr:
+    name: Create Azure DevOps pull request
+    if: >-
+      github.event.review.state == 'approved' &&
+      github.event.pull_request.merged == false
+    runs-on: ubuntu-latest
+    env:
+      AZURE_DEVOPS_PAT: ${{ secrets.AZURE_DEVOPS_PAT }}
+      AZURE_DEVOPS_REPO_URL: ${{ secrets.AZURE_DEVOPS_REPO_URL }}
+      AZURE_DEVOPS_ORG: ${{ vars.AZURE_DEVOPS_ORG }}
+      AZURE_DEVOPS_PROJECT: ${{ vars.AZURE_DEVOPS_PROJECT }}
+      AZURE_DEVOPS_REPO_ID: ${{ vars.AZURE_DEVOPS_REPO_ID }}
+      AZURE_TARGET_BRANCH: ${{ vars.AZURE_TARGET_BRANCH }}
+      GITHUB_PR_TITLE: ${{ github.event.pull_request.title }}
+      GITHUB_PR_BODY: ${{ github.event.pull_request.body }}
+      GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+      GITHUB_PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Push branch to Azure DevOps
+        run: |
+          if [ -z "${AZURE_DEVOPS_PAT}" ] || [ -z "${AZURE_DEVOPS_REPO_URL}" ]; then
+            echo "Azure DevOps credentials are not configured." >&2
+            exit 1
+          fi
+          sanitized_url="${AZURE_DEVOPS_REPO_URL#https://}"
+          git remote add azure "https://${AZURE_DEVOPS_PAT}@${sanitized_url}"
+          git push azure "HEAD:${GITHUB_PR_HEAD_REF}"
+
+      - name: Create Azure DevOps PR
+        id: create_pr
+        run: |
+          set -euo pipefail
+
+          if [ -z "${AZURE_DEVOPS_ORG}" ] || [ -z "${AZURE_DEVOPS_PROJECT}" ] || [ -z "${AZURE_DEVOPS_REPO_ID}" ]; then
+            echo "Azure DevOps repository metadata (org/project/repo) must be configured via repository variables." >&2
+            exit 1
+          fi
+
+          target_branch="${AZURE_TARGET_BRANCH:-develop}"
+          gh_pr_url="https://github.com/${GITHUB_REPOSITORY}/pull/${GITHUB_PR_NUMBER}"
+          pr_body="${GITHUB_PR_BODY:-}"
+
+          payload=$(jq -n \
+            --arg title "${GITHUB_PR_TITLE}" \
+            --arg description "$pr_body" \
+            --arg gh_url "$gh_pr_url" \
+            --arg source "refs/heads/${GITHUB_PR_HEAD_REF}" \
+            --arg target "refs/heads/${target_branch}" \
+            '{title: $title, description: ($description + "\n\nCreated from GitHub PR: " + $gh_url), sourceRefName: $source, targetRefName: $target}')
+
+          api_url="https://dev.azure.com/${AZURE_DEVOPS_ORG}/${AZURE_DEVOPS_PROJECT}/_apis/git/repositories/${AZURE_DEVOPS_REPO_ID}/pullrequests?api-version=7.1-preview.1"
+          response=$(curl -sS -u :"${AZURE_DEVOPS_PAT}" \
+            -H 'Content-Type: application/json' \
+            -d "$payload" \
+            "$api_url")
+
+          echo "$response" | jq '.'
+          azure_pr_url=$(echo "$response" | jq -r '._links.web.href // .url // empty')
+
+          if [ -z "$azure_pr_url" ] || [ "$azure_pr_url" = "null" ]; then
+            echo "Failed to determine Azure PR URL" >&2
+            exit 1
+          fi
+
+          echo "azure_pr_url=$azure_pr_url" >> "$GITHUB_OUTPUT"
+
+      - name: Comment with Azure PR link
+        if: steps.create_pr.outputs.azure_pr_url != ''
+        env:
+          AZURE_PR_URL: ${{ steps.create_pr.outputs.azure_pr_url }}
+        run: |
+          gh pr comment ${GITHUB_PR_NUMBER} --body "Azure DevOps PR created: ${AZURE_PR_URL}"
