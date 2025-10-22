@@ -1,5 +1,13 @@
 name: Create Azure PR on GitHub approval
 
+# Required configuration:
+#   secrets.AZURE_DEVOPS_PAT        - Azure DevOps PAT with Code Read & Write
+#   secrets.AZURE_DEVOPS_REPO_URL   - HTTPS URL of the Azure DevOps repo (e.g. https://dev.azure.com/ORG/PROJECT/_git/REPO)
+#   vars.AZURE_DEVOPS_ORG           - Azure DevOps organization slug
+#   vars.AZURE_DEVOPS_PROJECT       - Azure DevOps project name
+#   vars.AZURE_DEVOPS_REPO_ID       - Repository ID or name in Azure DevOps
+#   vars.AZURE_TARGET_BRANCH        - (Optional) Target branch for Azure PRs (defaults to develop)
+
 on:
   pull_request_review:
     types:

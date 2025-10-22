@@ -1,5 +1,12 @@
 name: Sync Azure develop to GitHub
 
+# Required configuration:
+#   secrets.AZURE_DEVOPS_PAT       - Azure DevOps PAT with Code Read & Write
+#   secrets.AZURE_DEVOPS_REPO_URL  - HTTPS URL of the Azure DevOps repo (e.g. https://dev.azure.com/ORG/PROJECT/_git/REPO)
+#   vars.SYNC_GIT_COMMITTER_NAME   - (Optional) Author name for mirror commits
+#   vars.SYNC_GIT_COMMITTER_EMAIL  - (Optional) Author email for mirror commits
+#   vars.GITHUB_MIRROR_BRANCH      - (Optional) Branch in GitHub to mirror Azure develop into
+
 on:
   schedule:
     - cron: '0 3 * * *'
