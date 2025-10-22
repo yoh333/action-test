@@ -1,4 +1,4 @@
-name: Create Azure PR on GitHub approval
+name: Create Azure PR after GitHub merge
 
 # Required configuration:
 #   secrets.AZURE_DEVOPS_PAT        - Azure DevOps PAT with Code Read & Write
@@ -9,9 +9,9 @@ name: Create Azure PR on GitHub approval
 #   vars.AZURE_TARGET_BRANCH        - (Optional) Target branch for Azure PRs (defaults to develop)
 
 on:
-  pull_request_review:
+  pull_request:
     types:
-      - submitted
+      - closed
 
 permissions:
   contents: read
@@ -20,9 +20,7 @@ permissions:
 jobs:
   create-pr:
     name: Create Azure DevOps pull request
-    if: >-
-      github.event.review.state == 'approved' &&
-      github.event.pull_request.merged == false
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     env:
       AZURE_DEVOPS_PAT: ${{ secrets.AZURE_DEVOPS_PAT }}
