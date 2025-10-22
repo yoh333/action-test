@@ -1,0 +1,56 @@
+name: Sync Azure develop to GitHub
+
+# Required configuration:
+#   secrets.AZURE_DEVOPS_PAT       - Azure DevOps PAT with Code Read & Write
+#   secrets.AZURE_DEVOPS_REPO_URL  - HTTPS URL of the Azure DevOps repo (e.g. https://dev.azure.com/ORG/PROJECT/_git/REPO)
+#   vars.SYNC_GIT_COMMITTER_NAME   - (Optional) Author name for mirror commits
+#   vars.SYNC_GIT_COMMITTER_EMAIL  - (Optional) Author email for mirror commits
+#   vars.GITHUB_MIRROR_BRANCH      - (Optional) Branch in GitHub to mirror Azure develop into
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Sync develop branch
+    runs-on: ubuntu-latest
+    env:
+      AZURE_DEVOPS_PAT: ${{ secrets.AZURE_DEVOPS_PAT }}
+      AZURE_DEVOPS_REPO_URL: ${{ secrets.AZURE_DEVOPS_REPO_URL }}
+      GIT_COMMITTER_NAME: ${{ vars.SYNC_GIT_COMMITTER_NAME }}
+      GIT_COMMITTER_EMAIL: ${{ vars.SYNC_GIT_COMMITTER_EMAIL }}
+      GITHUB_MIRROR_BRANCH: ${{ vars.GITHUB_MIRROR_BRANCH }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git author
+        run: |
+          git config user.name "${GIT_COMMITTER_NAME:-github-actions[bot]}"
+          git config user.email "${GIT_COMMITTER_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
+
+      - name: Add Azure DevOps remote
+        run: |
+          if [ -z "${AZURE_DEVOPS_PAT}" ] || [ -z "${AZURE_DEVOPS_REPO_URL}" ]; then
+            echo "Azure DevOps credentials are not configured." >&2
+            exit 1
+          fi
+          sanitized_url="${AZURE_DEVOPS_REPO_URL#https://}"
+          git remote add azure "https://${AZURE_DEVOPS_PAT}@${sanitized_url}"
+
+      - name: Fetch Azure develop
+        run: |
+          git fetch azure develop:refs/remotes/azure/develop
+
+      - name: Update GitHub mirror branch
+        run: |
+          mirror_branch="${GITHUB_MIRROR_BRANCH:-develop}"
+          git checkout -B "$mirror_branch" refs/remotes/azure/develop
+          git push origin "$mirror_branch" --force
